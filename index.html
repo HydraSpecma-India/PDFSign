@@ -445,6 +445,8 @@ async function initLogo(){
 /* Each type draws inside a fixed design box; resizing just scales it. */
 const DEFS = {
   sign:     { dw:360, dh:150, defW:150, label:"Signature",     sub:"signature + date" },
+  name:     { dw:300, dh:46,  defW:110, label:"Name",          sub:"name on its own" },
+  date:     { dw:230, dh:46,  defW:82,  label:"Date",          sub:"date on its own" },
   logo:     { dw:360, dh:152, defW:100, label:"Logo",          sub:"HydraSpecma mark" },
   seal:     { dw:200, dh:200, defW:88,  label:"Company seal",  sub:"round rubber stamp" },
   received: { dw:330, dh:92,  defW:150, label:"Received on",   sub:"pick the date" },
@@ -594,6 +596,19 @@ function drawStamp(c, st){
     if(st.seal) drawSealInto(c, W-L.padR-L.sealW, (H-L.sealW)/2, L.sealW, L.sealW, st.sealAlpha);
   }
 
+  else if(st.type==="name" || st.type==="date"){
+    const padL = st.border ? 16 : 2;
+    const isName = st.type==="name";
+    const txt = isName ? (v.name||"") : (v.signDate||"");
+    const wt = isName ? "700" : "400";
+    const s = fitText(c, txt, W-padL-4, 32, SANS, wt);
+    c.font = `${wt} ${s}px ${SANS}`;
+    c.fillStyle = BR.dark;
+    c.textBaseline = "middle";
+    c.fillText(txt, padL, H/2);
+    c.textBaseline = "alphabetic";
+  }
+
   else if(st.type==="logo"){
     drawLogoInto(c, st.border?14:4, 8, W-(st.border?20:8), H-16);
   }
@@ -694,7 +709,9 @@ function buildPalette(){
   redrawPalette();
 }
 function palPreview(t){
-  return {type:t, v:{}, seal:t!=="logo"&&t!=="sign", border:false, bg:false,
+  const g = globals();
+  return {type:t, v:{ name: g.name||"Name", person: g.person||"Name" },
+          seal:["received","person","recvbox"].includes(t), border:false, bg:false,
           showLogo:false, showName:false, showDate:true, sealAlpha:1, font:gFont, ink:gInk};
 }
 function redrawPalette(){
@@ -816,7 +833,7 @@ function addStamp(type,page,x,y,w,h){
   const st = {
     id: uid++, type, page, x, y, w, h,
     v:{},                                    // per-stamp overrides
-    seal: type!=="logo" && type!=="sign",   // signature starts clean: signature + date only
+    seal: ["received","person","recvbox"].includes(type),
     border: (type==="received"||type==="person"||type==="recvbox"),
     bg: false,
     showLogo: false, showName: false, showDate: true,
@@ -922,17 +939,19 @@ function renderInspector(){
   const host=$("#inspector"), s=sel();
   if(!s){ host.innerHTML='<div class="empty">Nothing selected. Drag a stamp onto a page.</div>'; return; }
   const d=dimsOf(s), DEF=DEFS[s.type];
-  const needName = s.type==="sign";
+  const needName = s.type==="sign" || s.type==="name";
   const needPerson = s.type==="person"||s.type==="recvbox";
   const needSign = s.type==="sign";
+  const needDate = s.type==="sign" || s.type==="date";
   const needRecv = s.type==="received"||s.type==="recvbox";
+  const canSeal = ["sign","received","person","recvbox"].includes(s.type);
   const g=globals();
 
   host.innerHTML = `
     <div class="miniprev"><canvas id="miniCv"></canvas></div>
     <div style="font-weight:700;margin-bottom:8px">${DEF.label} <span style="color:#a5a5a5;font-weight:400">· page ${s.page}</span></div>
-    ${needName?`<label class="f"><span>Name on signature</span><input id="iName" value="${esc(s.v.name!=null?s.v.name:g.name)}"></label>`:""}
-    ${needSign?`<label class="f"><span>Signing date</span><input id="iSignDate" type="date" value="${s.v.signDate!=null?s.v.signDate:g.signDate}"></label>`:""}
+    ${needName?`<label class="f"><span>Name</span><input id="iName" value="${esc(s.v.name!=null?s.v.name:g.name)}"></label>`:""}
+    ${needDate?`<label class="f"><span>Date</span><input id="iSignDate" type="date" value="${s.v.signDate!=null?s.v.signDate:g.signDate}"></label>`:""}
     ${needRecv?`<label class="f"><span>Received on</span><input id="iRecvDate" type="date" value="${s.v.recvDate!=null?s.v.recvDate:g.recvDate}"></label>`:""}
     ${needPerson?`<label class="f"><span>Warehouse person</span><input id="iPerson" value="${esc(s.v.person!=null?s.v.person:g.person)}"></label>`:""}
     ${needSign?`<div style="font-size:11.5px;color:#8b8b8b;font-weight:600;margin:2px 0 4px">Signature style</div>
@@ -941,7 +960,7 @@ function renderInspector(){
       <label class="tog"><input type="checkbox" id="iDate" ${s.showDate!==false?"checked":""}> Date</label>
       <label class="tog"><input type="checkbox" id="iShowName" ${s.showName?"checked":""}> Printed name</label>
       <label class="tog"><input type="checkbox" id="iShowLogo" ${s.showLogo?"checked":""}> Company logo</label>`:""}
-    ${s.type!=="logo"?`<label class="tog"><input type="checkbox" id="iSeal" ${s.seal?"checked":""}> Company seal</label>`:""}
+    ${canSeal?`<label class="tog"><input type="checkbox" id="iSeal" ${s.seal?"checked":""}> Company seal</label>`:""}
     <label class="tog"><input type="checkbox" id="iBorder" ${s.border?"checked":""}> Border</label>
     <label class="tog"><input type="checkbox" id="iBg" ${s.bg?"checked":""}> White background</label>
     <div class="row2">
@@ -1033,6 +1052,8 @@ function renderList(){
   stamps.slice().sort((a,b)=>a.page-b.page||a.id-b.id).forEach(s=>{
     const v=values(s);
     const extra = s.type==="sign"? (v.name||"—")
+               : s.type==="name"? (v.name||"—")
+               : s.type==="date"? (v.signDate||"—")
                : s.type==="person"? (v.person||"—")
                : s.type==="received"? (v.recvDate||"—")
                : s.type==="recvbox"? ((v.recvDate||"—")+" · "+(v.person||"—"))
@@ -1146,7 +1167,7 @@ function initControls(){
   ["fName","fPerson","fSignDate","fRecvDate","fFmt"].forEach(id=>{
     $("#"+id).addEventListener("input",()=>{
       store.set({name:$("#fName").value, person:$("#fPerson").value, fmt:$("#fFmt").value});
-      stamps.forEach(refit); renderList();
+      stamps.forEach(refit); redrawPalette(); renderList();
       const s=sel(); if(s) renderInspector();
     });
   });
